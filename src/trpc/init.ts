@@ -1,7 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
 import { initTRPC, TRPCError } from "@trpc/server";
-import { Redis } from "@upstash/redis";
-import { Ratelimit } from "@upstash/ratelimit";
 import { eq } from "drizzle-orm";
 import { cache } from "react";
 import superjson from "superjson";
