@@ -11,6 +11,7 @@ import {
 import { mux } from "~/lib/mux";
 import { db } from "~/db";
 import { videos } from "~/db/schema";
+import { workflow } from "~/lib/workflow";
 
 const SIGNING_SECRET = process.env.MUX_WEBHOOK_SECRET!;
 
@@ -58,7 +59,14 @@ export const POST = async (request: Request) => {
     }
 
     case "video.asset.ready": {
+      /**
+       * 1. Get webhook data (thumbnailUrl,previewUrl,duration .eg.)
+       * 2. If get the mux data, start a workflow to process the large time task,and return the 200 status to mux immediately.
+       * 3. Upload image to UploadThing from mux data.
+       * 4. Save data in db.
+       */
       console.log("---: ready START");
+      // Step 1 START
       const data = payload.data as VideoAssetReadyWebhookEvent["data"];
       const playbackId = data.playback_ids?.[0].id;
 
@@ -72,31 +80,18 @@ export const POST = async (request: Request) => {
       const tempPreviewUrl = `https://image.mux.com/${playbackId}/animated.gif`;
       const duration = data.duration ? Math.round(data.duration * 1000) : 0;
 
-      const utapi = new UTApi();
-      const [uploadedThumbnail, uploadedPreview] =
-        await utapi.uploadFilesFromUrl([tempThumbnailUrl, tempPreviewUrl]);
-
-      if (!uploadedThumbnail.data || !uploadedPreview.data)
-        return new Response("Failed to upload thumbnail or preview", {
-          status: 500,
-        });
-
-      const { key: thumbnailKey, ufsUrl: thumbnailUrl } = uploadedThumbnail.data;
-      const { key: previewKey, ufsUrl: previewUrl } = uploadedPreview.data;
-
-      await db
-        .update(videos)
-        .set({
-          muxStatus: data.status,
-          muxPlaybackId: playbackId,
-          muxAssetId: data.id,
-          thumbnailUrl,
-          thumbnailKey,
-          previewUrl,
-          previewKey,
+      // START a upstash workflow to handle time-consuming tasks that may take a lot of time.
+      workflow.trigger({
+        url: `${process.env.UPSTASH_WORKFLOW_URL}/api/videos/workflows/save-img`,
+        body: {
+          data,
+          tempThumbnailUrl,
+          tempPreviewUrl,
           duration,
-        })
-        .where(eq(videos.muxUploadId, data.upload_id));
+          playbackId,
+          upload_id: data.upload_id,
+        },
+      });
       console.log("---: ready END");
 
       break;

@@ -1,5 +1,3 @@
-// http://localhost:3000/api/videos/workflows/title
-
 import { serve } from "@upstash/workflow/nextjs";
 import { and, eq } from "drizzle-orm";
 import { db } from "~/db";
